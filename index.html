@@ -2,10 +2,9 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>La Toile Musicale</title>
     <style>
-        /* Réinitialisation et gestion de la taille réelle de l'écran */
         * {
             margin: 0;
             padding: 0;
@@ -15,59 +14,59 @@
             width: 100%;
             height: 100dvh;
             overflow: hidden;
-            background-color: #11141a; /* Un fond sombre et profond pour faire ressortir les couleurs */
+            background-color: #0b0d13;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
         }
         canvas {
             display: block;
             width: 100%;
             height: 100dvh;
             cursor: crosshair;
+            touch-action: none; /* Empêche le scroll du navigateur sur mobile lors du glissé */
         }
-        /* Bouton Retour vers l'Atelier */
         .btn-retour {
             position: absolute;
             top: 20px;
             left: 20px;
             padding: 10px 18px;
-            background-color: rgba(255, 255, 255, 0.1);
+            background-color: rgba(255, 255, 255, 0.08);
             color: #ffffff;
             text-decoration: none;
             border-radius: 25px;
             font-size: 0.9rem;
             backdrop-filter: blur(5px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             transition: all 0.3s ease;
-            z-index: 10; /* S'assure que le bouton reste au-dessus du canvas */
+            z-index: 10;
         }
         .btn-retour:hover {
-            background-color: rgba(255, 255, 255, 0.25);
+            background-color: rgba(255, 255, 255, 0.2);
             transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         }
     </style>
 </head>
 <body>
 
     <a href="https://pierreg78-maker.github.io/Atelier/" class="btn-retour">← Retour à l'Atelier</a>
-
     <canvas id="canvasMusique"></canvas>
 
     <script>
         const canvas = document.getElementById('canvasMusique');
         const ctx = canvas.getContext('2d');
 
-        // Initialisation du contexte Audio (créé paresseusement au premier clic)
         let audioCtx = null;
-
-        // Tableau pour stocker les formes en cours d'animation
+        let masterGain = null;
         let formes = [];
+        let estEnTrainDeGlisser = false;
 
-        // Gamme de fréquences (Notes de piano/violoncelle approximatives pour une ambiance harmonieuse)
-        // Ici, une gamme pentatonique mineure de Do (C, Eb, F, G, Bb) pour éviter les fausses notes
-        const gamme = [130.81, 155.56, 174.61, 196.00, 233.08, 261.63, 311.13, 349.23, 392.00, 466.16, 523.25];
+        // Variables pour le synthétiseur de violoncelle (glissé)
+        let violoncelleOsc = null;
+        let violoncelleGain = null;
 
-        // Ajustement de la taille du canvas
+        const gamme = [130.81, 146.83, 164.81, 196.00, 220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
+
         function redimensionner() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -75,97 +74,200 @@
         window.addEventListener('resize', redimensionner);
         redimensionner();
 
-        // Classe pour gérer les ondes visuelles
-        class Onde {
+        function initialiserAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                masterGain = audioCtx.createGain();
+                masterGain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+                masterGain.connect(audioCtx.destination);
+            }
+        }
+
+        // --- CLASSES VISUELLES ---
+        class OndePiano {
             constructor(x, y) {
                 this.x = x;
                 this.y = y;
                 this.rayon = 1;
-                this.rayonMax = 80 + Math.random() * 60;
-                this.vitesse = 2 + Math.random() * 2;
+                this.rayonMax = 100 + Math.random() * 50;
+                this.vitesse = 3;
                 this.opacite = 1;
-                // Choix d'une couleur lumineuse aléatoire
-                this.teinte = Math.floor(Math.random() * 360);
-                this.couleur = `hsla(${this.teinte}, 80%, 60%, `;
+                this.teinte = Math.floor(Math.random() * 40) + 180; // Tons bleus/cyan pour le piano
             }
-
             update() {
                 this.rayon += this.vitesse;
-                // L'opacité diminue à mesure que l'onde grandit
                 this.opacite = 1 - (this.rayon / this.rayonMax);
             }
-
             draw() {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.rayon, 0, Math.PI * 2);
-                ctx.strokeStyle = this.couleur + this.opacite + ')';
-                ctx.lineWidth = 3;
+                ctx.strokeStyle = `hsla(${this.teinte}, 85%, 65%, ${this.opacite})`;
+                ctx.lineWidth = 2.5;
                 ctx.stroke();
-                ctx.closePath();
             }
         }
 
-        // Fonction pour générer le son
-        function jouerNote(y) {
-            // Activer le contexte audio si ce n'est pas fait
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        class ParticuleVioloncelle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 2;
+                this.vy = (Math.random() - 0.5) * 2;
+                this.rayon = 4 + Math.random() * 4;
+                this.opacite = 1;
+                this.teinte = Math.floor(Math.random() * 40) + 10; // Tons chauds/dorés pour le violoncelle
             }
-
-            // Plus le clic est haut (y bas), plus la note est aiguë
-            const indexGamme = Math.style = Math.floor((1 - (y / canvas.height)) * gamme.length);
-            const frequence = gamme[Math.min(Math.max(indexGamme, 0), gamme.length - 1)];
-
-            const oscillateur = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-
-            oscillateur.type = 'sine'; // Onde sinusoïdale pour un son doux proche du piano
-            oscillateur.frequency.setValueAtTime(frequence, audioCtx.currentTime);
-
-            // Enveloppe sonore (Attaque rapide, déclin progressif pour simuler la résonance)
-            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime); 
-            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.5);
-
-            oscillateur.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-
-            oscillateur.start();
-            oscillateur.stop(audioCtx.currentTime + 1.5);
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.opacite -= 0.02;
+                if (this.rayon > 0.1) this.rayon -= 0.05;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.rayon, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${this.teinte}, 90%, 60%, ${this.opacite})`;
+                ctx.fill();
+            }
         }
 
-        // Gestionnaire de clic
-        window.addEventListener('click', (init) => {
-            // Ignorer le clic si on clique sur le bouton retour
-            if (init.target.classList.contains('btn-retour')) return;
+        // --- FONCTIONS SONORES ---
+        function jouerNotePiano(y) {
+            initialiserAudio();
+            const indexGamme = Math.floor((1 - (y / canvas.height)) * gamme.length);
+            const freq = gamme[Math.min(Math.max(indexGamme, 0), gamme.length - 1)];
 
-            const x = init.clientX;
-            const y = init.clientY;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
 
-            // Création de l'effet visuel et sonore
-            formes.push(new Onde(x, y));
-            jouerNote(y);
+            osc.type = 'sine'; 
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.2);
+
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 1.2);
+        }
+
+        function demarrerVioloncelle(y) {
+            initialiserAudio();
+            if (violoncelleOsc) return;
+
+            violoncelleOsc = audioCtx.createOscillator();
+            violoncelleGain = audioCtx.createGain();
+
+            // Onde triangle + léger filtre pour un son chaud évoquant le violoncelle
+            violoncelleOsc.type = 'triangle'; 
+            
+            const filtre = audioCtx.createBiquadFilter();
+            filtre.type = 'lowpass';
+            filtre.frequency.setValueAtTime(600, audioCtx.currentTime);
+
+            violoncelleOsc.frequency.setValueAtTime(calculerFrequenceGlisee(y), audioCtx.currentTime);
+            violoncelleGain.gain.setValueAtTime(0, audioCtx.currentTime);
+            // Attaque douce du violoncelle
+            violoncelleGain.gain.linearRampToValueAtTime(0.25, audioCtx.currentTime + 0.15);
+
+            violoncelleOsc.connect(filtre);
+            filtre.connect(violoncelleGain);
+            violoncelleGain.connect(masterGain);
+            violoncelleOsc.start();
+        }
+
+        function modifierVioloncelle(y) {
+            if (!violoncelleOsc) return;
+            // Portamento fluide (glissando) vers la nouvelle note
+            violoncelleOsc.frequency.setTargetAtTime(calculerFrequenceGlisee(y), audioCtx.currentTime, 0.05);
+        }
+
+        function arreterVioloncelle() {
+            if (!violoncelleOsc) return;
+            const t = audioCtx.currentTime;
+            // Extinction progressive de la note (Relâchement)
+            violoncelleGain.gain.cancelScheduledValues(t);
+            violoncelleGain.gain.setValueAtTime(violoncelleGain.gain.value, t);
+            violoncelleGain.gain.linearRampToValueAtTime(0.001, t + 0.3);
+            
+            const oscASupprimer = violoncelleOsc;
+            setTimeout(() => {
+                try { oscASupprimer.stop(); } catch(e){}
+            }, 350);
+
+            violoncelleOsc = null;
+            violoncelleGain = null;
+        }
+
+        function calculerFrequenceGlisee(y) {
+            // Permet un glissement continu et non par paliers rigides
+            const ratio = 1 - (y / canvas.height);
+            const freqMin = gamme[0];
+            const freqMax = gamme[gamme.length - 1];
+            return freqMin + (freqMax - freqMin) * ratio;
+        }
+
+        // --- GESTIONNAIRES D'ÉVÉNEMENTS (Souri & Tactile) ---
+        function actionDebut(x, y, target) {
+            if (target.classList.contains('btn-retour')) return;
+            estEnTrainDeGlisser = false;
+            jouerNotePiano(y);
+            formes.push(new OndePiano(x, y));
+            
+            // On prépare le violoncelle si le mouvement commence
+            setTimeout(() => { if (estEnTrainDeGlisser) demarrerVioloncelle(y); }, 100);
+        }
+
+        function actionMouvement(x, y, target) {
+            if (target.classList.contains('btn-retour')) return;
+            estEnTrainDeGlisser = true;
+            
+            if (violoncelleOsc) {
+                modifierVioloncelle(y);
+                // Générer des poussières d'étoiles dorées pour le glissé
+                for(let i=0; i<2; i++) {
+                    formes.push(new ParticuleVioloncelle(x, y));
+                }
+            }
+        }
+
+        function actionFin() {
+            estEnTrainDeGlisser = false;
+            arreterVioloncelle();
+        }
+
+        // Événements Souris
+        window.addEventListener('mousedown', (e) => actionDebut(e.clientX, e.clientY, e.target));
+        window.addEventListener('mousemove', (e) => { if (e.buttons === 1) actionMouvement(e.clientX, e.clientY, e.target); });
+        window.addEventListener('mouseup', actionFin);
+
+        // Événements Tactiles
+        window.addEventListener('touchstart', (e) => {
+            const t = e.touches[0];
+            actionDebut(t.clientX, t.clientY, e.target);
         });
+        window.addEventListener('touchmove', (e) => {
+            const t = e.touches[0];
+            actionMouvement(t.clientX, t.clientY, e.target);
+        });
+        window.addEventListener('touchend', actionFin);
 
-        // Boucle d'animation principale
+
+        // --- BOUCLE D'ANIMATION ---
         function animer() {
-            // Effacement léger à chaque frame pour créer un effet de traînée élégant
-            ctx.fillStyle = 'rgba(17, 20, 26, 0.2)';
+            ctx.fillStyle = 'rgba(11, 13, 19, 0.25)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Mise à jour et dessin des formes
             for (let i = formes.length - 1; i >= 0; i--) {
                 formes[i].update();
                 formes[i].draw();
-
-                // Supprimer les formes invisibles
-                if (formes[i].opacite <= 0) {
+                if (formes[i].opacite <= 0 || (formes[i].rayon && formes[i].rayon <= 0.1)) {
                     formes.splice(i, 1);
                 }
             }
-
             requestAnimationFrame(animer);
         }
-
         animer();
     </script>
 </body>
