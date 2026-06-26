@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>La Toile Musicale</title>
+    <style>
+        /* Réinitialisation et gestion de la taille réelle de l'écran */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            width: 100%;
+            height: 100dvh;
+            overflow: hidden;
+            background-color: #11141a; /* Un fond sombre et profond pour faire ressortir les couleurs */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100dvh;
+            cursor: crosshair;
+        }
+        /* Bouton Retour vers l'Atelier */
+        .btn-retour {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px 18px;
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 25px;
+            font-size: 0.9rem;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            z-index: 10; /* S'assure que le bouton reste au-dessus du canvas */
+        }
+        .btn-retour:hover {
+            background-color: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <a href="https://pierreg78-maker.github.io/Atelier/" class="btn-retour">← Retour à l'Atelier</a>
+
+    <canvas id="canvasMusique"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvasMusique');
+        const ctx = canvas.getContext('2d');
+
+        // Initialisation du contexte Audio (créé paresseusement au premier clic)
+        let audioCtx = null;
+
+        // Tableau pour stocker les formes en cours d'animation
+        let formes = [];
+
+        // Gamme de fréquences (Notes de piano/violoncelle approximatives pour une ambiance harmonieuse)
+        // Ici, une gamme pentatonique mineure de Do (C, Eb, F, G, Bb) pour éviter les fausses notes
+        const gamme = [130.81, 155.56, 174.61, 196.00, 233.08, 261.63, 311.13, 349.23, 392.00, 466.16, 523.25];
+
+        // Ajustement de la taille du canvas
+        function redimensionner() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', redimensionner);
+        redimensionner();
+
+        // Classe pour gérer les ondes visuelles
+        class Onde {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.rayon = 1;
+                this.rayonMax = 80 + Math.random() * 60;
+                this.vitesse = 2 + Math.random() * 2;
+                this.opacite = 1;
+                // Choix d'une couleur lumineuse aléatoire
+                this.teinte = Math.floor(Math.random() * 360);
+                this.couleur = `hsla(${this.teinte}, 80%, 60%, `;
+            }
+
+            update() {
+                this.rayon += this.vitesse;
+                // L'opacité diminue à mesure que l'onde grandit
+                this.opacite = 1 - (this.rayon / this.rayonMax);
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.rayon, 0, Math.PI * 2);
+                ctx.strokeStyle = this.couleur + this.opacite + ')';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.closePath();
+            }
+        }
+
+        // Fonction pour générer le son
+        function jouerNote(y) {
+            // Activer le contexte audio si ce n'est pas fait
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            // Plus le clic est haut (y bas), plus la note est aiguë
+            const indexGamme = Math.style = Math.floor((1 - (y / canvas.height)) * gamme.length);
+            const frequence = gamme[Math.min(Math.max(indexGamme, 0), gamme.length - 1)];
+
+            const oscillateur = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillateur.type = 'sine'; // Onde sinusoïdale pour un son doux proche du piano
+            oscillateur.frequency.setValueAtTime(frequence, audioCtx.currentTime);
+
+            // Enveloppe sonore (Attaque rapide, déclin progressif pour simuler la résonance)
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime); 
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.5);
+
+            oscillateur.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillateur.start();
+            oscillateur.stop(audioCtx.currentTime + 1.5);
+        }
+
+        // Gestionnaire de clic
+        window.addEventListener('click', (init) => {
+            // Ignorer le clic si on clique sur le bouton retour
+            if (init.target.classList.contains('btn-retour')) return;
+
+            const x = init.clientX;
+            const y = init.clientY;
+
+            // Création de l'effet visuel et sonore
+            formes.push(new Onde(x, y));
+            jouerNote(y);
+        });
+
+        // Boucle d'animation principale
+        function animer() {
+            // Effacement léger à chaque frame pour créer un effet de traînée élégant
+            ctx.fillStyle = 'rgba(17, 20, 26, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Mise à jour et dessin des formes
+            for (let i = formes.length - 1; i >= 0; i--) {
+                formes[i].update();
+                formes[i].draw();
+
+                // Supprimer les formes invisibles
+                if (formes[i].opacite <= 0) {
+                    formes.splice(i, 1);
+                }
+            }
+
+            requestAnimationFrame(animer);
+        }
+
+        animer();
+    </script>
+</body>
+</html>
