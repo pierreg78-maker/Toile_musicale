@@ -152,53 +152,77 @@
             osc.stop(audioCtx.currentTime + 1.2);
         }
 
-        function demarrerVioloncelle(y) {
-            initialiserAudio();
-            if (violoncelleOsc) return;
+       // Remplacer ces deux fonctions dans votre bloc <script>
 
-            violoncelleOsc = audioCtx.createOscillator();
-            violoncelleGain = audioCtx.createGain();
+function demarrerVioloncelle(y) {
+    initialiserAudio();
+    if (violoncelleOsc) return;
 
-            // Onde triangle + léger filtre pour un son chaud évoquant le violoncelle
-            violoncelleOsc.type = 'triangle'; 
-            
-            const filtre = audioCtx.createBiquadFilter();
-            filtre.type = 'lowpass';
-            filtre.frequency.setValueAtTime(600, audioCtx.currentTime);
+    // Création de deux oscillateurs pour faire un effet de choeur/vibrato (plus riche)
+    violoncelleOsc = audioCtx.createOscillator();
+    violoncelleOsc2 = audioCtx.createOscillator(); // Deuxième corde
+    violoncelleGain = audioCtx.createGain();
 
-            violoncelleOsc.frequency.setValueAtTime(calculerFrequenceGlisee(y), audioCtx.currentTime);
-            violoncelleGain.gain.setValueAtTime(0, audioCtx.currentTime);
-            // Attaque douce du violoncelle
-            violoncelleGain.gain.linearRampToValueAtTime(0.25, audioCtx.currentTime + 0.15);
+    // L'onde en dents de scie apporte les harmoniques de la corde frottée
+    violoncelleOsc.type = 'sawtooth'; 
+    violoncelleOsc2.type = 'sawtooth'; 
 
-            violoncelleOsc.connect(filtre);
-            filtre.connect(violoncelleGain);
-            violoncelleGain.connect(masterGain);
-            violoncelleOsc.start();
-        }
+    // Désaccordage léger pour créer de la texture et du corps (le côté "boisé")
+    violoncelleOsc.detune.setValueAtTime(-8, audioCtx.currentTime); // en cents
+    violoncelleOsc2.detune.setValueAtTime(8, audioCtx.currentTime);
 
-        function modifierVioloncelle(y) {
-            if (!violoncelleOsc) return;
-            // Portamento fluide (glissando) vers la nouvelle note
-            violoncelleOsc.frequency.setTargetAtTime(calculerFrequenceGlisee(y), audioCtx.currentTime, 0.05);
-        }
+    // Un filtre plus bas pour couper le son métallique et ne garder que le feutré du violoncelle
+    const filtre = audioCtx.createBiquadFilter();
+    filtre.type = 'lowpass';
+    filtre.frequency.setValueAtTime(380, audioCtx.currentTime); // Filtre plus bas = son plus sombre et boisé
+    filtre.Q.setValueAtTime(1, audioCtx.currentTime); // Légère résonance
 
-        function arreterVioloncelle() {
-            if (!violoncelleOsc) return;
-            const t = audioCtx.currentTime;
-            // Extinction progressive de la note (Relâchement)
-            violoncelleGain.gain.cancelScheduledValues(t);
-            violoncelleGain.gain.setValueAtTime(violoncelleGain.gain.value, t);
-            violoncelleGain.gain.linearRampToValueAtTime(0.001, t + 0.3);
-            
-            const oscASupprimer = violoncelleOsc;
-            setTimeout(() => {
-                try { oscASupprimer.stop(); } catch(e){}
-            }, 350);
+    const freqInitiale = calculerFrequenceGlisee(y);
+    violoncelleOsc.frequency.setValueAtTime(freqInitiale, audioCtx.currentTime);
+    violoncelleOsc2.frequency.setValueAtTime(freqInitiale, audioCtx.currentTime);
 
-            violoncelleOsc = null;
-            violoncelleGain = null;
-        }
+    violoncelleGain.gain.setValueAtTime(0, audioCtx.currentTime);
+    violoncelleGain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.2); // Attaque un peu plus lourde
+
+    violoncelleOsc.connect(filtre);
+    violoncelleOsc2.connect(filtre);
+    filtre.connect(violoncelleGain);
+    violoncelleGain.connect(masterGain);
+
+    violoncelleOsc.start();
+    violoncelleOsc2.start();
+}
+
+function modifierVioloncelle(y) {
+    if (!violoncelleOsc || !violoncelleOsc2) return;
+    const freqTarget = calculerFrequenceGlisee(y);
+    // Glissement fluide pour les deux oscillateurs
+    violoncelleOsc.frequency.setTargetAtTime(freqTarget, audioCtx.currentTime, 0.05);
+    violoncelleOsc2.frequency.setTargetAtTime(freqTarget, audioCtx.currentTime, 0.05);
+}
+
+// Pensez aussi à modifier 'arreterVioloncelle' pour couper le deuxième oscillateur :
+function arreterVioloncelle() {
+    if (!violoncelleOsc) return;
+    const t = audioCtx.currentTime;
+    
+    violoncelleGain.gain.cancelScheduledValues(t);
+    violoncelleGain.gain.setValueAtTime(violoncelleGain.gain.value, t);
+    violoncelleGain.gain.linearRampToValueAtTime(0.001, t + 0.4); // Extinction un peu plus longue
+    
+    const osc1 = violoncelleOsc;
+    const osc2 = violoncelleOsc2;
+    setTimeout(() => {
+        try { 
+            osc1.stop(); 
+            osc2.stop(); 
+        } catch(e){}
+    }, 450);
+
+    violoncelleOsc = null;
+    violoncelleOsc2 = null;
+    violoncelleGain = null;
+}
 
         function calculerFrequenceGlisee(y) {
             // Permet un glissement continu et non par paliers rigides
